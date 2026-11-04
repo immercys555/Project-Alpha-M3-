@@ -15,19 +15,20 @@ class M3TensorCouplingOperator(nn.Module):
     def forward(self, x):
         # x shape: (batch_size, seq_len, d_model)
 
-        # 1. Perceptual Vector (H_percept): aggregate over sequence
+        # 1. Perceptual Vector (H_percept)
         h_percept = torch.mean(torch.relu(self.W_percept(x)), dim=1)  # (batch, d_model)
 
-        # 2. Substrate Dynamics (S_sub): aggregate over sequence
+        # 2. Substrate Dynamics (S_sub)
         s_sub = torch.mean(torch.sigmoid(self.W_sub(x)), dim=1)  # (batch, d_model)
 
-        # 3. Integration Coefficient (Phi_integration): scalar per sample
+        # 3. Integration Coefficient (Phi_integration)
         phi_integration = torch.tanh(
             torch.sum(h_percept * s_sub, dim=-1, keepdim=True)
         )  # (batch, 1)
 
-        # 4. Final system maturity score: preserve feature dimension
+        # 4. Final system maturity score (維度保留)
         h_total = h_percept + (s_sub * phi_integration)  # (batch, d_model)
+        
         return h_total
 
 if __name__ == "__main__":
@@ -35,8 +36,10 @@ if __name__ == "__main__":
     batch_size = 2
     seq_len = 1024
     x = torch.randn(batch_size, seq_len, d_model)
+    
     model = M3TensorCouplingOperator(d_model)
     output = model(x)
+    
     print("M3 Proxy Execution Successful!")
     print("H_total shape:", output.shape)
     print("H_total mean value:", output.mean().item())
