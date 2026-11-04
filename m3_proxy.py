@@ -1,57 +1,36 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class M3ProxyOperator(nn.Module):
-    """
-    M3 Cognitive Architecture - Core Proxy Operator (Project Alpha)
-    Mathematical Formula: H_total = H_percept + (S_sub * Phi_recurrence)
-    """
-    def __init__(self, d_model: int = 512, d_state: int = 64):
+class M3TensorCouplingOperator(nn.Module):
+    def __init__(self, d_model):
         super().__init__()
         self.d_model = d_model
-        self.d_state = d_state
+        self.W_percept = nn.Linear(d_model, d_model)
+        self.W_sub = nn.Linear(d_model, d_model)
         
-        # 1. Perceptual Projection (H_percept)
-        self.proj_percept = nn.Linear(d_model, d_model)
+    def forward(self, x):
+        # x shape: (batch_size, seq_len, d_model)
+        # H_percept 感知向量提取
+        h_percept = torch.mean(torch.relu(self.W_percept(x)), dim=1) # (batch, d_model)
         
-        # 2. Subconscious Tensor Field Generator (S_sub)
-        self.proj_subconscious = nn.Linear(d_model, d_state)
-        self.sub_density_gate = nn.Linear(d_model, d_state)
+        # S_sub 基底動力學提取
+        s_sub = torch.mean(torch.sigmoid(self.W_sub(x)), dim=1)      # (batch, d_model)
         
-        # 3. Non-linear Self-Coupling Recurrence Factor (Phi_recurrence)
-        self.phi_recurrence = nn.Sequential(
-            nn.Linear(d_state, d_state),
-            nn.Tanh(),  # Constrains non-linear feedback to [-1, 1]
-            nn.Linear(d_state, d_model)
-        )
+        # 張量耦合與整合係數計算 (確保維度完美對齊)
+        phi_integration = torch.tanh(torch.sum(h_percept * s_sub, dim=-1, keepdim=True)) # (batch, 1)
         
-        # Boundary Norms & Continuous Decay Vector for Gradient Stability
-        self.layer_norm = nn.LayerNorm(d_model)
-        self.manifold_decay = nn.Parameter(torch.ones(d_state) * 0.95)
+        # 最終系統成熟度 H_total 計算
+        h_total = torch.mean(h_percept) + torch.mean(s_sub * phi_integration)
+        return h_total
 
-    def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None):
-        """
-        x: [Batch_Size, Seq_Len, d_model]
-        prev_state: [Batch_Size, d_state]
-        """
-        batch_size, seq_len, _ = x.shape
-        if prev_state is None:
-            prev_state = torch.zeros(batch_size, self.d_state, device=x.device)
-            
-        output_tokens = []
-        current_state = prev_state
-        
-        for t in range(seq_len):
-            x_t = x[:, t, :]
-            h_percept = self.proj_percept(x_t)
-            
-            s_candidate = torch.sigmoid(self.proj_subconscious(x_t))
-            gate = torch.sigmoid(self.sub_density_gate(x_t))
-            
-            # State Update with Bounded Spectral Decay
-            current_state = (self.manifold_decay * current_state) + (gate * s_candidate)
-            s_sub = current_state
-            
-            phi = self.phi_recurrence(s_sub)
-            s_energy = torch.mean(s_sub, dim=-1, keepdim=True)
+# 實測驗證
+if __name__ == "__main__":
+    d_model = 64
+    batch_size = 2
+    seq_len = 1024  # 模擬大上下文 O(N) 線性複雜度測試
+    x = torch.randn(batch_size, seq_len, d_model)
+
+    model = M3TensorCouplingOperator(d_model)
+    output = model(x)
+    print("M3 Proxy Execution Successful!")
+    print("H_total output value:", output.item())
